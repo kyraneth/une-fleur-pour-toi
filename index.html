@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Une Fleur Pour Toi</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <style>
+        .flower-container {
+            width: 100%;
+            height: 100vh;
+            background-color: #f5f2eb;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .flower-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: 
+                linear-gradient(to right, rgba(0,0,0,0.02) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(0,0,0,0.02) 1px, transparent 1px);
+            background-size: 15px 15px;
+            pointer-events: none;
+        }
+        
+        .flower-container svg {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .regenerate-button {
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            padding: 0.5rem 1rem;
+            background-color: rgb(34 197 94);
+            color: white;
+            border: none;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            transition: background-color 0.2s;
+            font-size: 1rem;
+            font-family: inherit;
+            z-index: 1000;
+        }
+        
+        .regenerate-button:hover {
+            background-color: rgb(22 163 74);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+    <script type="module">
+        import React, { useState, useEffect, useMemo } from 'https://esm.sh/react@18.2.0';
+        import ReactDOM from 'https://esm.sh/react-dom@18.2.0';
+
+        const random = (min, max) => Math.random() * (max - min) + min;
+        const randomInt = (min, max) => Math.floor(random(min, max));
+
+        const PLANT_TYPES = {
+            TALL_SINGLE: {
+                maxSteps: 150,
+                branchChance: 0.2,
+                returnChance: 0.15,
+                angleVariation: 5,
+                branchAngleRange: [-20, 20],
+                baseLength: 10
+            },
+            BUSH: {
+                maxSteps: 100,
+                branchChance: 0.4,
+                returnChance: 0.3,
+                angleVariation: 10,
+                branchAngleRange: [-45, 45],
+                baseLength: 8
+            },
+            TREE: {
+                maxSteps: 120,
+                branchChance: 0.3,
+                returnChance: 0.2,
+                angleVariation: 8,
+                branchAngleRange: [-30, 30],
+                baseLength: 12
+            },
+            SHORT_BUSHY: {
+                maxSteps: 80,
+                branchChance: 0.5,
+                returnChance: 0.4,
+                angleVariation: 15,
+                branchAngleRange: [-60, 60],
+                baseLength: 7
+            }
+        };
+
+        const FLOWER_TYPES = {
+            LOTUS: {
+                layers: 3,
+                petalsPerLayer: [5, 8, 13],
+                sizeMultiplier: 1.4,
+                petalShape: "curved"
+            },
+            CHRYSANTHEMUM: {
+                layers: 4,
+                petalsPerLayer: [8, 13, 21, 34],
+                sizeMultiplier: 1.6,
+                petalShape: "pointed_curved"
+            },
+            DAHLIA: {
+                layers: 3,
+                petalsPerLayer: [8, 13, 21],
+                sizeMultiplier: 1.5,
+                petalShape: "layered_curve"
+            },
+            PEONY: {
+                layers: 4,
+                petalsPerLayer: [5, 8, 13, 21],
+                sizeMultiplier: 1.7,
+                petalShape: "rounded_layer"
+            }
+        };
+
+        const generatePlantColorScheme = () => {
+            const baseHue = random(0, 360);
+            return {
+                baseHue,
+                shades: [
+                    `hsl(${baseHue}, 70%, 85%)`,
+                    `hsl(${baseHue}, 75%, 75%)`,
+                    `hsl(${baseHue}, 80%, 65%)`,
+                    `hsl(${baseHue}, 85%, 55%)`,
+                    `hsl(${baseHue}, 90%, 45%)`
+                ]
+            };
+        };
+
+        // SVG Filters and Effects
+        const InkEffects = () => (
+            <defs>
+                {/* Main ink diffusion effect */}
+                <filter id="ink-texture" x="-50%" y="-50%" width="200%" height="200%">
+                    <feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="3" result="noise" />
+                    <feDisplacementMap in="SourceGraphic" in2="noise" scale="3" />
+                    <feGaussianBlur stdDeviation="0.5" result="blur" />
+                    <feComposite operator="in" in2="SourceGraphic" />
+                </filter>
+
+                {/* Soft edge effect for petals */}
+                <filter id="petal-edge" x="-50%" y="-50%" width="200%" height="200%">
+                    <feTurbulence type="turbulence" baseFrequency="0.05" numOctaves="2" result="turbulence" />
+                    <feDisplacementMap in="SourceGraphic" in2="turbulence" scale="2" />
+                    <feGaussianBlur stdDeviation="0.3" />
+                    <feComposite operator="in" in2="SourceGraphic" />
+                </filter>
+
+                {/* Watercolor texture for stems */}
+                <filter id="stem-texture" x="-50%" y="-50%" width="200%" height="200%">
+                    <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="4" result="noise" />
+                    <feColorMatrix type="matrix" values="0 0 0 0 0, 0 1 0 0 0, 0 0 0 0 0, 0 0 0 0.5 0"/>
+                    <feComposite operator="in" in2="SourceGraphic" />
+                </filter>
+
+                {/* Paper texture background */}
+                <filter id="paper-texture" x="0" y="0" width="100%" height="100%">
+                    <feTurbulence type="fractalNoise" baseFrequency="0.015" numOctaves="5" result="noise" />
+                    <feDiffuseLighting in="noise" lightingColor="#fff" surfaceScale="2">
+                        <feDistantLight azimuth="45" elevation="60" />
+                    </feDiffuseLighting>
+                    <feComposite operator="in" in2="SourceGraphic" />
+                </filter>
+            </defs>
+        );
+
+        // Wind Animation System
+        const WindSystem = () => (
+            <defs>
+                {/* Main wind cycle */}
+                <animate
+                    id="windCycle"
+                    attributeName="nothing"
+                    dur="4s"
+                    values="0;1;0;-0.5;0"
+                    repeatCount="indefinite"
+                />
+                
+                {/* Secondary wind fluctuations */}
+                <animate
+                    id="windFlutter"
+                    attributeName="nothing"
+                    dur="2.5s"
+                    values="0;0.3;0;-0.2;0"
+                    repeatCount="indefinite"
+                />
+            </defs>
+        );
+
+        // Artistic Title Component
+        const ArtisticTitle = () => (
+            <g className="title" transform="translate(250, 50)">
+                <defs>
+                    <filter id="oil-paint" x="-50%" y="-50%" width="200%" height="200%">
+                        <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="5" />
+                        <feDisplacementMap in="SourceGraphic" scale="2" />
+                        <feGaussianBlur stdDeviation="0.5" />
+                        <feComponentTransfer>
+                            <feFuncR type="linear" slope="1.2" />
+                            <feFuncG type="linear" slope="1.2" />
+                            <feFuncB type="linear" slope="1.2" />
+                        </feComponentTransfer>
+                    </filter>
+                </defs>
+                <text
+                    textAnchor="middle"
+                    fill="#2c1810"
+                    filter="url(#oil-paint)"
+                    style={{
+                        fontSize: '28px',
+                        fontFamily: 'serif',
+                        fontStyle: 'italic'
+                    }}
+                >
+                    Une Fleur Pour Toi
+                </text>
+            </g>
+        );
+
+        // Petal Path Generation
+        const generatePetalPath = (x, y, size, angle, shape) => {
+            switch (shape) {
+                case "curved":
+                    return `
+                        M ${x} ${y}
+                        C ${x + size * 0.5 * Math.cos(angle - 0.5)} ${y + size * 0.5 * Math.sin(angle - 0.5)}
+                        ${x + size * 0.8 * Math.cos(angle - 0.3)} ${y + size * 0.8 * Math.sin(angle - 0.3)}
+                        ${x + size * Math.cos(angle)} ${y + size * Math.sin(angle)}
+                        C ${x + size * 0.8 * Math.cos(angle + 0.3)} ${y + size * 0.8 * Math.sin(angle + 0.3)}
+                        ${x + size * 0.5 * Math.cos(angle + 0.5)} ${y + size * 0.5 * Math.sin(angle + 0.5)}
+                        ${x} ${y}
+                    `;
+                case "pointed_curved":
+                    const tip = {
+                        x: x + size * 1.2 * Math.cos(angle),
+                        y: y + size * 1.2 * Math.sin(angle)
+                    };
+                    return `
+                        M ${x} ${y}
+                        C ${x + size * 0.7 * Math.cos(angle - 0.4)} ${y + size * 0.7 * Math.sin(angle - 0.4)}
+                        ${x + size * Math.cos(angle - 0.2)} ${y + size * Math.sin(angle - 0.2)}
+                        ${tip.x} ${tip.y}
+                        C ${x + size * Math.cos(angle + 0.2)} ${y + size * Math.sin(angle + 0.2)}
+                        ${x + size * 0.7 * Math.cos(angle + 0.4)} ${y + size * 0.7 * Math.sin(angle + 0.4)}
+                        ${x} ${y}
+                    `;
+                case "layered_curve":
+                    const mid = {
+                        x: x + size * 0.7 * Math.cos(angle),
+                        y: y + size * 0.7 * Math.sin(angle)
+                    };
+                    const end = {
+                        x: x + size * Math.cos(angle),
+                        y: y + size * Math.sin(angle)
+                    };
+                    return `
+                        M ${x} ${y}
+                        Q ${x + size * 0.5 * Math.cos(angle - 0.3)} ${y + size * 0.5 * Math.sin(angle - 0.3)}
+                        ${mid.x} ${mid.y}
+                        Q ${x + size * 0.8 * Math.cos(angle + 0.2)} ${y + size * 0.8 * Math.sin(angle + 0.2)}
+                        ${end.x} ${end.y}
+                        Q ${x + size * 0.8 * Math.cos(angle + 0.4)} ${y + size * 0.8 * Math.sin(angle + 0.4)}
+                        ${x} ${y}
+                    `;
+                case "rounded_layer":
+                    return `
+                        M ${x} ${y}
+                        A ${size * 0.5} ${size * 0.5} 0 0 1 
+                        ${x + size * Math.cos(angle)} ${y + size * Math.sin(angle)}
+                        A ${size * 0.5} ${size * 0.5} 0 0 1 
+                        ${x} ${y}
+                    `;
+                default:
+                    return `
+                        M ${x} ${y}
+                        L ${x + size * Math.cos(angle)} ${y + size * Math.sin(angle)}
+                        Z
+                    `;
+            }
+        };
+
+        // Petal Component
+        const Petal = ({ x, y, angle, size, color, index, shape, branchDelay }) => (
+            <g>
+                <path
+                    d={generatePetalPath(x, y, size, angle, shape)}
+                    fill={color}
+                    stroke="rgba(0,0,0,0.1)"
+                    strokeWidth="0.5"
+                    opacity="0"
+                    filter="url(#ink-texture)"
+                >
+                    <animate
+                        attributeName="opacity"
+                        from="0"
+                        to="1"
+                        dur="0.6s"
+                        begin={`${branchDelay + 0.45 + (index * 0.03)}s`}
+                        fill="freeze"
+                    />
+                    <animateTransform
+                        attributeName="transform"
+                        type="rotate"
+                        from={`-45 ${x} ${y}`}
+                        to={`0 ${x} ${y}`}
+                        dur="0.75s"
+                        begin={`${branchDelay + 0.45 + (index * 0.03)}s`}
+                        fill="freeze"
+                    />
+                    {/* Wind effect */}
+                    <animateTransform
+                        attributeName="transform"
+                        type="rotate"
+                        values={`0 ${x} ${y};2 ${x} ${y};0 ${x} ${y};-1 ${x} ${y};0 ${x} ${y}`}
+                        dur="4s"
+                        begin={`${branchDelay + 1}s`}
+                        repeatCount="indefinite"
+                        additive="sum"
+                    />
+                </path>
+            </g>
+        );
+
+        // Leaf Component
+        const Leaf = ({ x, y, angle, size, branchDelay }) => {
+            const heightFactor = Math.pow((500 - y) / 400, 1.5);
+            const leafPath = `
+                M ${x} ${y}
+                C ${x + size * 0.5 * Math.cos(angle - 0.5)} ${y + size * 0.5 * Math.sin(angle - 0.5)}
+                ${x + size * Math.cos(angle - 0.3)} ${y + size * Math.sin(angle - 0.3)}
+                ${x + size * 1.5 * Math.cos(angle)} ${y + size * 1.5 * Math.sin(angle)}
+                C ${x + size * Math.cos(angle + 0.3)} ${y + size * Math.sin(angle + 0.3)}
+                ${x + size * 0.5 * Math.cos(angle + 0.5)} ${y + size * 0.5 * Math.sin(angle + 0.5)}
+                ${x} ${y}
+            `;
+
+            return (
+                <g>
+                    <path
+                        d={leafPath}
+                        fill="#2d5a27"
+                        stroke="#1a3817"
+                        strokeWidth="0.5"
+                        opacity="0"
+                        filter="url(#ink-texture)"
+                    >
+                        <animate
+                            attributeName="opacity"
+                            from="0"
+                            to="0.9"
+                            dur="0.6s"
+                            begin={`${branchDelay + 0.2}s`}
+                            fill="freeze"
+                        />
+                        {/* Primary wind movement */}
+                        <animateTransform
+                            attributeName="transform"
+                            type="rotate"
+                            values={`0 ${x} ${y};
+                                    ${8 * heightFactor} ${x} ${y};
+                                    0 ${x} ${y};
+                                    ${-5 * heightFactor} ${x} ${y};
+                                    0 ${x} ${y}`}
+                            dur="4s"
+                            begin={`${branchDelay + 0.2}s`}
+                            repeatCount="indefinite"
+                            additive="sum"
+                        />
+                        {/* Secondary flutter */}
+                        <animateTransform
+                            attributeName="transform"
+                            type="rotate"
+                            values={`0 ${x} ${y};
+                                    ${3 * heightFactor} ${x} ${y};
+                                    0 ${x} ${y};
+                                    ${-2 * heightFactor} ${x} ${y};
+                                    0 ${x} ${y}`}
+                            dur="2.5s"
+                            begin={`${branchDelay + 0.2}s`}
+                            repeatCount="indefinite"
+                            additive="sum"
+                        />
+                    </path>
+                </g>
+            );
+        };
+
+        // Branch Component
+        const Branch = ({ d, branchLength, totalBranches }) => {
+            const delay = (branchLength / totalBranches) * 2;
+            const [startX, startY] = d.split(' ').slice(1, 3).map(Number);
+            const heightFactor = Math.pow((500 - startY) / 400, 1.5);
+            
+            return (
+                <g>
+                    <path
+                        d={d}
+                        stroke="#4a8f47"
+                        strokeWidth={2.5 * ((startY - 100) / 400) + 0.8}
+                        fill="none"
+                        strokeDasharray="1000"
+                        strokeDashoffset="1000"
+                        strokeLinecap="round"
+                        filter="url(#stem-texture)"
+                    >
+                        {/* Growth animation */}
+                        <animate
+                            attributeName="stroke-dashoffset"
+                            from="1000"
+                            to="0"
+                            dur="0.5s"
+                            begin={`${delay}s`}
+                            fill="freeze"
+                        />
+                    </path>
+                    {/* Wind animation */}
+                    <animateTransform
+                        attributeName="transform"
+                        type="rotate"
+                        values={`0 ${startX} ${startY};
+                                ${5 * heightFactor} ${startX} ${startY};
+                                0 ${startX} ${startY};
+                                ${-3 * heightFactor} ${startX} ${startY};
+                                0 ${startX} ${startY}`}
+                        dur="4s"
+                        begin={`${delay}s`}
+                        repeatCount="indefinite"
+                        additive="sum"
+                    />
+                </g>
+            );
+        };
+
+        // Flower Component
+        const Flower = ({ x, y, size, colorScheme, type, branchLength, totalBranches }) => {
+            const flowerType = FLOWER_TYPES[type];
+            const adjustedSize = size * flowerType.sizeMultiplier;
+            
+            return (
+                <g className="flower">
+                    {[...Array(flowerType.layers)].map((_, layerIndex) => {
+                        const layerSize = adjustedSize * (1 - layerIndex * 0.15);
+                        const numPetals = flowerType.petalsPerLayer[layerIndex];
+                        const color = colorScheme.shades[layerIndex % colorScheme.shades.length];
+                        
+                        return (
+                            <g key={`${layerIndex}-${Date.now()}`} className="flower-layer">
+                                {[...Array(numPetals)].map((_, petalIndex) => {
+                                    const angle = (petalIndex * 2 * Math.PI) / numPetals;
+                                    return (
+                                        <Petal
+                                            key={`${petalIndex}-${Date.now()}`}
+                                            x={x}
+                                            y={y}
+                                            angle={angle}
+                                            size={layerSize}
+                                            color={color}
+                                            index={layerIndex * numPetals + petalIndex}
+                                            shape={flowerType.petalShape}
+                                            branchDelay={(branchLength / totalBranches) * 2}
+                                        />
+                                    );
+                                })}
+                            </g>
+                        );
+                    })}
+                </g>
+            );
+        };
+
+        // Floating Petals System
+        const FloatingPetalsSystem = ({ colorScheme }) => {
+            const petalsRef = React.useRef(Array.from({ length: 30 }, () => ({
+                id: Math.random(),
+                startX: random(-100, 600),
+                startY: random(-50, 650),
+                size: random(8, 18),
+                rotation: random(0, 360),
+                speed: random(15, 25),
+                delay: random(0, 5),
+                wobbleSpeed: random(2, 4),
+                wobbleSize: random(20, 40)
+            })));
+
+            const createPetalPath = (id) => {
+                const petal = petalsRef.current.find(p => p.id === id);
+                const points = [];
+                let x = petal.startX;
+                let y = petal.startY;
+                
+                for (let i = 0; i < 100; i++) {
+                    x += Math.sin(i * 0.1) * 2;
+                    y += 1;
+                    
+                    if (y > 650) {
+                        y = -50;
+                        x = random(-100, 600);
+                    }
+                    
+                    points.push(`${x},${y}`);
+                }
+                
+                return points.join(' L ');
+            };
+
+            return (
+                <g className="floating-petals">
+                    {petalsRef.current.map((petal) => {
+                        const color = colorScheme.shades[Math.floor(random(0, colorScheme.shades.length))];
+                        return (
+                            <g key={`${petal.id}-${Date.now()}`}>
+                                <path
+                                    d={generatePetalPath(0, 0, petal.size, 0, "curved")}
+                                    fill={color}
+                                    opacity="0.6"
+                                    filter="url(#petal-edge)"
+                                >
+                                    <animateMotion
+                                        path={`M ${createPetalPath(petal.id)}`}
+                                        dur={`${petal.speed}s`}
+                                        begin={`-${petal.delay}s`}
+                                        repeatCount="indefinite"
+                                    />
+                                    <animateTransform
+                                        attributeName="transform"
+                                        type="rotate"
+                                        from={`${petal.rotation} 0 0`}
+                                        to={`${petal.rotation + 360} 0 0`}
+                                        dur={`${petal.wobbleSpeed}s`}
+                                        repeatCount="indefinite"
+                                        additive="sum"
+                                    />
+                                    <animateTransform
+                                        attributeName="transform"
+                                        type="translate"
+                                        values={`0,0; ${petal.wobbleSize},-${petal.wobbleSize}; 0,0`}
+                                        dur={`${petal.wobbleSpeed * 1.5}s`}
+                                        repeatCount="indefinite"
+                                        additive="sum"
+                                    />
+                                </path>
+                            </g>
+                        );
+                    })}
+                </g>
+            );
+        };
+
+        // Main FlowerGenerator Component
+        const FlowerGenerator = () => {
+            const [plant, setPlant] = useState(null);
+            const [colorScheme, setColorScheme] = useState(generatePlantColorScheme());
+
+            const generatePlant = () => {
+                const segments = [];
+                const flowers = [];
+                const stack = [];
+                let branchLength = 0;
+                let pos = { x: 250, y: 500 };
+                let angle = -90;
+                let topFlowerPlaced = false;
+                let lowestY = pos.y;
+                let lowestPos = { ...pos };
+                
+                const plantType = PLANT_TYPES[Object.keys(PLANT_TYPES)[
+                    Math.floor(Math.random() * Object.keys(PLANT_TYPES).length)
+                ]];
+                
+                const addBranch = (from, to, ctrl) => {
+                    branchLength++;
+                    segments.push(
+                        <Branch
+                            key={`${branchLength}-${Date.now()}`}
+                            d={`M ${from.x} ${from.y} Q ${ctrl.x} ${ctrl.y} ${to.x} ${to.y}`}
+                            branchLength={branchLength}
+                            totalBranches={plantType.maxSteps}
+                        />
+                    );
+                    
+                    if (random(0, 1) < 0.2) {
+                        const leafAngle = angle + random(-30, 30);
+                        segments.push(
+                            <Leaf
+                                key={`leaf-${branchLength}-${Date.now()}`}
+                                x={to.x}
+                                y={to.y}
+                                angle={leafAngle * Math.PI / 180}
+                                size={random(5, 8)}
+                                branchDelay={(branchLength / plantType.maxSteps) * 2}
+                            />
+                        );
+                    }
+                };
+
+                let steps = plantType.maxSteps;
+                while (steps > 0 && pos.y > 100) {
+                    if (random(0, 1) < plantType.branchChance) {
+                        stack.push({ pos: { ...pos }, angle });
+                        angle += random(...plantType.branchAngleRange);
+                    } else if (random(0, 1) < plantType.returnChance && stack.length > 0) {
+                        const saved = stack.pop();
+                        
+                        const heightFactor = 1 - (pos.y - 100) / 400;
+                        if (heightFactor > 0.3 && random(0, 1) < (0.20 + heightFactor * 0.45)) {
+                            const flowerType = Object.keys(FLOWER_TYPES)[
+                                randomInt(0, Object.keys(FLOWER_TYPES).length)
+                            ];
+                            
+                            const baseSize = random(5, 8);
+                            const sizeMultiplier = 1 + (heightFactor * 2);
+                            
+                            flowers.push(
+                                <Flower
+                                    key={`flower-${flowers.length}-${Date.now()}`}
+                                    x={pos.x}
+                                    y={pos.y}
+                                    size={baseSize * sizeMultiplier}
+                                    colorScheme={colorScheme}
+                                    type={flowerType}
+                                    branchLength={branchLength}
+                                    totalBranches={plantType.maxSteps}
+                                />
+                            );
+                        }
+                        
+                        pos = saved.pos;
+                        angle = saved.angle;
+                    }
+
+                    if (pos.y < lowestY) {
+                        lowestY = pos.y;
+                        lowestPos = { ...pos };
+                    }
+
+                    const newPos = {
+                        x: pos.x + plantType.baseLength * Math.cos(angle * Math.PI / 180),
+                        y: pos.y + plantType.baseLength * Math.sin(angle * Math.PI / 180)
+                    };
+                    
+                    const ctrl = {
+                        x: pos.x + plantType.baseLength * 0.5 * Math.cos(angle * Math.PI / 180) + random(-1, 1),
+                        y: pos.y + plantType.baseLength * 0.5 * Math.sin(angle * Math.PI / 180) + random(-1, 1)
+                    };
+
+                    addBranch(pos, newPos, ctrl);
+                    pos = newPos;
+                    angle += random(-plantType.angleVariation, plantType.angleVariation);
+                    steps--;
+                }
+
+                // Add the top flower (30% bigger)
+                if (lowestY < 450) {
+                    const flowerType = Object.keys(FLOWER_TYPES)[
+                        randomInt(0, Object.keys(FLOWER_TYPES).length)
+                    ];
+                    
+                    flowers.push(
+                        <Flower
+                            key={`top-flower-${Date.now()}`}
+                            x={lowestPos.x}
+                            y={lowestPos.y}
+                            size={10 * 1.3}
+                            colorScheme={colorScheme}
+                            type={flowerType}
+                            branchLength={branchLength}
+                            totalBranches={plantType.maxSteps}
+                        />
+                    );
+                }
+
+                return { segments, flowers };
+            };
+
+            useEffect(() => {
+                setPlant(generatePlant());
+            }, []);
+
+            const regenerate = () => {
+                setPlant(null); // Clear current plant
+                const newColorScheme = generatePlantColorScheme();
+                setColorScheme(newColorScheme);
+                // Use setTimeout to ensure DOM update before generating new plant
+                setTimeout(() => {
+                    setPlant(generatePlant());
+                }, 50);
+            };
+
+            return (
+                <div className="flower-container">
+                    <svg viewBox="0 0 500 600" className="w-full h-full">
+                        <InkEffects />
+                        <WindSystem />
+                        <rect width="500" height="600" fill="#f5f2eb" filter="url(#paper-texture)" />
+                        <ArtisticTitle />
+                        <g className="plant-container">
+                            <FloatingPetalsSystem colorScheme={colorScheme} />
+                            {plant && (
+                                <>
+                                    <g className="stems">{plant.segments}</g>
+                                    <g className="flowers">{plant.flowers}</g>
+                                </>
+                            )}
+                        </g>
+                    </svg>
+                    <button 
+                        className="regenerate-button"
+                        onClick={regenerate}
+                    >
+                        Nouvelle Fleur
+                    </button>
+                </div>
+            );
+        };
+
+// Initialize the app
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<FlowerGenerator />);
+    </script>
+</body>
+</html>
